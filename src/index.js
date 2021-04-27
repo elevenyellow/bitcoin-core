@@ -1,15 +1,14 @@
-
 /**
  * Module dependencies.
  */
 
-import Parser from './parser';
-import Requester from './requester';
-import _ from 'lodash';
-import debugnyan from 'debugnyan';
-import methods from './methods';
-import requestLogger from './logging/request-logger';
-import semver from 'semver';
+import Parser from "./parser";
+import Requester from "./requester";
+import _ from "lodash";
+import debugnyan from "debugnyan";
+import methods from "./methods";
+import requestLogger from "./logging/request-logger";
+import semver from "semver";
 
 /**
  * List of networks and their default port mapping.
@@ -18,24 +17,25 @@ import semver from 'semver';
 const networks = {
   mainnet: 8332,
   regtest: 18332,
-  testnet: 18332
+  testnet: 18332,
 };
 
 /**
  * Promisify helper.
  */
 
-const promisify = fn => (...args) => new Promise((resolve, reject) => {
-  fn(...args, (error, value) => {
-    if (error) {
-      reject(error);
+const promisify = (fn) => (...args) =>
+  new Promise((resolve, reject) => {
+    fn(...args, (error, value) => {
+      if (error) {
+        reject(error);
 
-      return;
-    }
+        return;
+      }
 
-    resolve(value);
+      resolve(value);
+    });
   });
-});
 
 /**
  * Constructor.
@@ -45,16 +45,16 @@ class Client {
   constructor({
     agentOptions,
     headers = false,
-    host = 'localhost',
-    logger = debugnyan('bitcoin-core'),
-    network = 'mainnet',
+    host = "localhost",
+    logger = debugnyan("bitcoin-core"),
+    network = "mainnet",
     password,
     port,
     ssl = false,
     timeout = 30000,
     username,
     version,
-    wallet
+    wallet,
   } = {}) {
     if (!_.has(networks, network)) {
       throw new Error(`Invalid network name "${network}"`, { network });
@@ -68,8 +68,8 @@ class Client {
     this.password = password;
     this.port = port || networks[network];
     this.ssl = {
-      enabled: _.get(ssl, 'enabled', ssl),
-      strict: _.get(ssl, 'strict', _.get(ssl, 'enabled', ssl))
+      enabled: _.get(ssl, "enabled", ssl),
+      strict: _.get(ssl, "strict", _.get(ssl, "enabled", ssl)),
     };
     this.timeout = timeout;
     this.wallet = wallet;
@@ -86,28 +86,43 @@ class Client {
 
       [version] = result;
 
-      this.hasNamedParametersSupport = semver.satisfies(version, '>=0.14.0');
+      this.hasNamedParametersSupport = semver.satisfies(version, ">=0.14.0");
     }
 
     this.version = version;
-    this.methods = _.transform(methods, (result, method, name) => {
-      result[_.toLower(name)] = {
-        features: _.transform(method.features, (result, constraint, name) => {
-          result[name] = {
-            supported: version ? semver.satisfies(version, constraint) : true
-          };
-        }, {}),
-        supported: version ? semver.satisfies(version, method.version) : true
-      };
-    }, {});
+    this.methods = _.transform(
+      methods,
+      (result, method, name) => {
+        result[_.toLower(name)] = {
+          features: _.transform(
+            method.features,
+            (result, constraint, name) => {
+              result[name] = {
+                supported: version
+                  ? semver.satisfies(version, constraint)
+                  : true,
+              };
+            },
+            {}
+          ),
+          supported: version ? semver.satisfies(version, method.version) : true,
+        };
+      },
+      {}
+    );
 
     const request = requestLogger(logger);
 
+    let baseUrl = `${this.ssl.enabled ? "https" : "http"}://${this.host}`;
+    if (this.port) {
+      baseUrl = `${baseUrl}:${this.port}`;
+    }
+
     this.request = request.defaults({
       agentOptions: this.agentOptions,
-      baseUrl: `${this.ssl.enabled ? 'https' : 'http'}://${this.host}:${this.port}`,
+      baseUrl,
       strictSSL: this.ssl.strict,
-      timeout: this.timeout
+      timeout: this.timeout,
     });
     this.request.getAsync = promisify(this.request.get);
     this.request.postAsync = promisify(this.request.post);
@@ -126,40 +141,61 @@ class Client {
     const isBatch = Array.isArray(input);
 
     if (isBatch) {
-      multiwallet = _.some(input, command => {
-        return _.get(this.methods[command.method], 'features.multiwallet.supported', false) === true;
+      multiwallet = _.some(input, (command) => {
+        return (
+          _.get(
+            this.methods[command.method],
+            "features.multiwallet.supported",
+            false
+          ) === true
+        );
       });
 
-      body = input.map((method, index) => this.requester.prepare({
-        method: method.method,
-        parameters: method.parameters,
-        suffix: index
-      }));
+      body = input.map((method, index) =>
+        this.requester.prepare({
+          method: method.method,
+          parameters: method.parameters,
+          suffix: index,
+        })
+      );
     } else {
-      if (this.hasNamedParametersSupport && parameters.length === 1 && _.isPlainObject(parameters[0])) {
+      if (
+        this.hasNamedParametersSupport &&
+        parameters.length === 1 &&
+        _.isPlainObject(parameters[0])
+      ) {
         parameters = parameters[0];
       }
 
-      multiwallet = _.get(this.methods[input], 'features.multiwallet.supported', false) === true;
+      multiwallet =
+        _.get(this.methods[input], "features.multiwallet.supported", false) ===
+        true;
       body = this.requester.prepare({ method: input, parameters });
     }
 
-    return this.parser.rpc(await this.request.postAsync({
-      auth: _.pickBy(this.auth, _.identity),
+    const rpc = {
       body: JSON.stringify(body),
-      uri: `${multiwallet && this.wallet ? `/wallet/${this.wallet}` : '/'}`
-    }));
+      uri: `${multiwallet && this.wallet ? `/wallet/${this.wallet}` : "/"}`,
+    };
+    if (this.auth) {
+      rpc.auth = _lodash.default.pickBy(this.auth, _lodash.default.identity);
+    }
+
+    return this.parser.rpc(await this.request.postAsync(rpc));
   }
 
   /**
    * Given a transaction hash, returns a transaction in binary, hex-encoded binary, or JSON formats.
    */
 
-  async getTransactionByHash(hash, { extension = 'json' } = {}) {
-    return this.parser.rest(extension, await this.request.getAsync({
-      encoding: extension === 'bin' ? null : undefined,
-      url: `/rest/tx/${hash}.${extension}`
-    }));
+  async getTransactionByHash(hash, { extension = "json" } = {}) {
+    return this.parser.rest(
+      extension,
+      await this.request.getAsync({
+        encoding: extension === "bin" ? null : undefined,
+        url: `/rest/tx/${hash}.${extension}`,
+      })
+    );
   }
 
   /**
@@ -168,22 +204,30 @@ class Client {
    * hash instead of the complete transaction details. The option only affects the JSON response.
    */
 
-  async getBlockByHash(hash, { summary = false, extension = 'json' } = {}) {
-    const encoding = extension === 'bin' ? null : undefined;
-    const url = `/rest/block${summary ? '/notxdetails/' : '/'}${hash}.${extension}`;
+  async getBlockByHash(hash, { summary = false, extension = "json" } = {}) {
+    const encoding = extension === "bin" ? null : undefined;
+    const url = `/rest/block${
+      summary ? "/notxdetails/" : "/"
+    }${hash}.${extension}`;
 
-    return this.parser.rest(extension, await this.request.getAsync({ encoding, url }));
+    return this.parser.rest(
+      extension,
+      await this.request.getAsync({ encoding, url })
+    );
   }
 
   /**
    * Given a block hash, returns amount of blockheaders in upward direction.
    */
 
-  async getBlockHeadersByHash(hash, count, { extension = 'json' } = {}) {
-    const encoding = extension === 'bin' ? null : undefined;
+  async getBlockHeadersByHash(hash, count, { extension = "json" } = {}) {
+    const encoding = extension === "bin" ? null : undefined;
     const url = `/rest/headers/${count}/${hash}.${extension}`;
 
-    return this.parser.rest(extension, await this.request.getAsync({ encoding, url }));
+    return this.parser.rest(
+      extension,
+      await this.request.getAsync({ encoding, url })
+    );
   }
 
   /**
@@ -192,7 +236,10 @@ class Client {
    */
 
   async getBlockchainInformation() {
-    return this.parser.rest('json', await this.request.getAsync(`/rest/chaininfo.json`));
+    return this.parser.rest(
+      "json",
+      await this.request.getAsync(`/rest/chaininfo.json`)
+    );
   }
 
   /**
@@ -201,14 +248,19 @@ class Client {
    * 	 - https://github.com/bitcoin/bips/blob/master/bip-0064.mediawiki
    */
 
-  async getUnspentTransactionOutputs(outpoints, { extension = 'json' } = {}) {
-    const encoding = extension === 'bin' ? null : undefined;
-    const sets = _.flatten([outpoints]).map(outpoint => {
-      return `${outpoint.id}-${outpoint.index}`;
-    }).join('/');
+  async getUnspentTransactionOutputs(outpoints, { extension = "json" } = {}) {
+    const encoding = extension === "bin" ? null : undefined;
+    const sets = _.flatten([outpoints])
+      .map((outpoint) => {
+        return `${outpoint.id}-${outpoint.index}`;
+      })
+      .join("/");
     const url = `/rest/getutxos/checkmempool/${sets}.${extension}`;
 
-    return this.parser.rest(extension, await this.request.getAsync({ encoding, url }));
+    return this.parser.rest(
+      extension,
+      await this.request.getAsync({ encoding, url })
+    );
   }
 
   /**
@@ -217,7 +269,10 @@ class Client {
    */
 
   async getMemoryPoolContent() {
-    return this.parser.rest('json', await this.request.getAsync('/rest/mempool/contents.json'));
+    return this.parser.rest(
+      "json",
+      await this.request.getAsync("/rest/mempool/contents.json")
+    );
   }
 
   /**
@@ -230,7 +285,10 @@ class Client {
    */
 
   async getMemoryPoolInformation() {
-    return this.parser.rest('json', await this.request.getAsync('/rest/mempool/info.json'));
+    return this.parser.rest(
+      "json",
+      await this.request.getAsync("/rest/mempool/info.json")
+    );
   }
 }
 
@@ -239,7 +297,10 @@ class Client {
  */
 
 _.forOwn(methods, (options, method) => {
-  Client.prototype[method] = _.partial(Client.prototype.command, method.toLowerCase());
+  Client.prototype[method] = _.partial(
+    Client.prototype.command,
+    method.toLowerCase()
+  );
 });
 
 /**

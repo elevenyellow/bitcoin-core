@@ -1,37 +1,52 @@
+"use strict";
+
+Object.defineProperty(exports, "__esModule", {
+  value: true,
+});
+exports.obfuscate = obfuscate;
+
+var _lodash = require("lodash");
+
+var _methods = _interopRequireDefault(require("../methods"));
+
+function _interopRequireDefault(obj) {
+  return obj && obj.__esModule ? obj : { default: obj };
+}
 
 /**
  * Module dependencies.
  */
 
-import { assign, defaults, get, has, isArray, isEmpty, isPlainObject, isString, map, mapKeys } from 'lodash';
-import methods from '../methods';
-
 /**
  * Map all methods to lowercase.
  */
-
-const lowercaseMethods = mapKeys(methods, (value, key) => key.toLowerCase());
-
+const lowercaseMethods = (0, _lodash.mapKeys)(_methods.default, (value, key) =>
+  key.toLowerCase()
+);
 /**
  * Obfuscate the response body.
  */
 
 function obfuscateResponseBody(body, method) {
-  const fn = get(lowercaseMethods[method], 'obfuscate.response');
+  const fn = (0, _lodash.get)(lowercaseMethods[method], "obfuscate.response");
 
-  if (!fn || isEmpty(body.result)) {
+  if (!fn || (0, _lodash.isEmpty)(body.result)) {
     return body;
   }
 
-  return defaults({ result: fn(body.result) }, body);
+  return (0, _lodash.defaults)(
+    {
+      result: fn(body.result),
+    },
+    body
+  );
 }
-
 /**
  * Obfuscate the response.
  */
 
 function obfuscateResponse(request, instance) {
-  if (request.type !== 'response') {
+  if (request.type !== "response") {
     return;
   }
 
@@ -39,9 +54,11 @@ function obfuscateResponse(request, instance) {
     return;
   }
 
-  if (get(request, `headers['content-type']`) === 'application/octet-stream') {
-    request.body = '******';
-
+  if (
+    (0, _lodash.get)(request, `headers['content-type']`) ===
+    "application/octet-stream"
+  ) {
+    request.body = "******";
     return;
   }
 
@@ -49,84 +66,99 @@ function obfuscateResponse(request, instance) {
     return;
   }
 
-  request.body = JSON.parse(request.body);
+  try {
+    JSON.parse(request.body);
+  } catch (error) {
+    return;
+  }
 
+  request.body = JSON.parse(request.body);
   const requestBody = JSON.parse(instance.body);
 
-  if (isArray(request.body)) {
-    const methodsById = mapKeys(requestBody, method => method.id);
-
-    request.body = map(request.body, request => obfuscateResponseBody(request, methodsById[request.id].method));
+  if ((0, _lodash.isArray)(request.body)) {
+    const methodsById = (0, _lodash.mapKeys)(
+      requestBody,
+      (method) => method.id
+    );
+    request.body = (0, _lodash.map)(request.body, (request) =>
+      obfuscateResponseBody(request, methodsById[request.id].method)
+    );
   } else {
     request.body = obfuscateResponseBody(request.body, requestBody.method);
   }
 
   request.body = JSON.stringify(request.body);
 }
-
 /**
  * Obfuscate the request body.
  */
 
 function obfuscateRequestBody(body) {
-  const method = get(lowercaseMethods[body.method], 'obfuscate.request');
+  const method = (0, _lodash.get)(
+    lowercaseMethods[body.method],
+    "obfuscate.request"
+  );
 
   if (!method) {
     return body;
   }
 
-  if (isPlainObject(body.params)) {
-    return assign(body, { params: method.named(body.params) });
+  if ((0, _lodash.isPlainObject)(body.params)) {
+    return (0, _lodash.assign)(body, {
+      params: method.named(body.params),
+    });
   }
 
-  return assign(body, { params: method.default(body.params) });
+  return (0, _lodash.assign)(body, {
+    params: method.default(body.params),
+  });
 }
-
 /**
  * Obfuscate the request.
  */
 
 function obfuscateRequest(request) {
-  if (request.type !== 'request') {
+  if (request.type !== "request") {
     return;
   }
 
-  if (!isString(request.body)) {
+  if (!(0, _lodash.isString)(request.body)) {
     return;
   }
 
   request.body = JSON.parse(request.body);
 
-  if (isArray(request.body)) {
-    request.body = map(request.body, obfuscateRequestBody);
+  if ((0, _lodash.isArray)(request.body)) {
+    request.body = (0, _lodash.map)(request.body, obfuscateRequestBody);
   } else {
     request.body = obfuscateRequestBody(request.body);
   }
 
   request.body = JSON.stringify(request.body);
 }
-
 /**
  * Obfuscate headers.
  */
 
 function obfuscateHeaders(request) {
-  if (request.type !== 'request') {
+  if (request.type !== "request") {
     return;
   }
 
-  if (!has(request, 'headers.authorization')) {
+  if (!(0, _lodash.has)(request, "headers.authorization")) {
     return;
   }
 
-  request.headers.authorization = request.headers.authorization.replace(/(Basic )(.*)/, `$1******`);
+  request.headers.authorization = request.headers.authorization.replace(
+    /(Basic )(.*)/,
+    `$1******`
+  );
 }
-
 /**
  * Export `RequestObfuscator`.
  */
 
-export function obfuscate(request, instance) {
+function obfuscate(request, instance) {
   obfuscateHeaders(request);
   obfuscateRequest(request);
   obfuscateResponse(request, instance);
